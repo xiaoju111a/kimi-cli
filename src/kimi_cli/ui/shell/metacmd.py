@@ -270,6 +270,36 @@ async def yolo(app: Shell, args: list[str]):
     console.print("[green]✓[/green] Life is short, use YOLO!")
 
 
+@meta_command(kimi_soul_only=True)
+async def mcp(app: Shell, args: list[str]):
+    """Show connected MCP servers and available tools"""
+    assert isinstance(app.soul, KimiSoul)
+
+    # Get MCP tools from the toolset, grouped by server name
+    mcp_tools: dict[str, list[str]] = {}
+
+    for tool in app.soul._agent.toolset.tools:
+        # Check if it's an MCP tool by looking for _server_name attribute
+        server_name = getattr(tool, "_server_name", None)
+        if server_name is None:
+            continue
+
+        if server_name not in mcp_tools:
+            mcp_tools[server_name] = []
+        mcp_tools[server_name].append(tool.name)
+
+    if not mcp_tools:
+        console.print("[dim]No MCP servers connected (or still loading...).[/dim]")
+        console.print("[dim]Use --mcp-config-file to connect to MCP servers.[/dim]")
+        return
+
+    console.print("[bold]Connected MCP Servers:[/bold]")
+    for server_name, tools in sorted(mcp_tools.items()):
+        console.print(f"\n  [cyan]{server_name}[/cyan] ({len(tools)} tools)")
+        for tool_name in sorted(tools):
+            console.print(f"    • {tool_name}")
+
+
 from . import (  # noqa: E402
     debug,  # noqa: F401
     setup,  # noqa: F401
