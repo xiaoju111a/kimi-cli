@@ -10,16 +10,19 @@ from pathlib import Path
 from typing import TYPE_CHECKING, overload
 
 from kosong.message import Message
+from prompt_toolkit.shortcuts.choice_input import ChoiceInput
 from rich.panel import Panel
 
 import kimi_cli.prompts as prompts
 from kimi_cli.cli import Reload
+from kimi_cli.session import Session
 from kimi_cli.soul.agent import load_agents_md
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.soul.message import system
 from kimi_cli.ui.shell.console import console
 from kimi_cli.utils.changelog import CHANGELOG, format_release_notes
+from kimi_cli.utils.datetime import format_relative_time
 from kimi_cli.utils.logging import logger
 
 if TYPE_CHECKING:
@@ -261,6 +264,46 @@ async def compact(app: Shell, args: list[str]):
     console.print("[green]✓[/green] Context has been compacted.")
 
 
+@meta_command(name="sessions", aliases=["resume"], kimi_soul_only=True)
+async def list_sessions(app: Shell, args: list[str]):
+    """List sessions and resume optionally"""
+    assert isinstance(app.soul, KimiSoul)
+
+    work_dir = app.soul._runtime.session.work_dir
+    current_session_id = app.soul._runtime.session.id
+    sessions = await Session.list(work_dir)
+
+    if not sessions:
+        console.print("[yellow]No sessions found.[/yellow]")
+        return
+
+    choices: list[tuple[str, str]] = []
+    for session in sessions:
+        time_str = format_relative_time(session.updated_at)
+        marker = " (current)" if session.id == current_session_id else ""
+        label = f"{session.title}, {time_str}{marker}"
+        choices.append((session.id, label))
+
+    try:
+        selection = await ChoiceInput(
+            message="Select a session to switch to (↑↓ navigate, Enter select, Ctrl+C cancel):",
+            options=choices,
+            default=choices[0][0],
+        ).prompt_async()
+    except (EOFError, KeyboardInterrupt):
+        return
+
+    if not selection:
+        return
+
+    if selection == current_session_id:
+        console.print("[yellow]You are already in this session.[/yellow]")
+        return
+
+    console.print(f"[green]Switching to session {selection}...[/green]")
+    raise Reload(session_id=selection)
+
+
 @meta_command(kimi_soul_only=True)
 async def yolo(app: Shell, args: list[str]):
     """Enable YOLO mode (auto approve all actions)"""
@@ -268,6 +311,36 @@ async def yolo(app: Shell, args: list[str]):
 
     app.soul._runtime.approval.set_yolo(True)
     console.print("[green]✓[/green] Life is short, use YOLO!")
+
+
+@meta_command(kimi_soul_only=True)
+async def mcp(app: Shell, args: list[str]):
+    """Show connected MCP servers and available tools"""
+    assert isinstance(app.soul, KimiSoul)
+
+    # Get MCP tools from the toolset, grouped by server name
+    mcp_tools: dict[str, list[str]] = {}
+
+    for tool in app.soul._agent.toolset.tools:
+        # Check if it's an MCP tool by looking for _server_name attribute
+        server_name = getattr(tool, "_server_name", None)
+        if server_name is None:
+            continue
+
+        if server_name not in mcp_tools:
+            mcp_tools[server_name] = []
+        mcp_tools[server_name].append(tool.name)
+
+    if not mcp_tools:
+        console.print("[dim]No MCP servers connected (or still loading...).[/dim]")
+        console.print("[dim]Use --mcp-config-file to connect to MCP servers.[/dim]")
+        return
+
+    console.print("[bold]Connected MCP Servers:[/bold]")
+    for server_name, tools in sorted(mcp_tools.items()):
+        console.print(f"\n  [cyan]{server_name}[/cyan] ({len(tools)} tools)")
+        for tool_name in sorted(tools):
+            console.print(f"    • {tool_name}")
 
 
 from . import (  # noqa: E402
