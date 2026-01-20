@@ -262,7 +262,33 @@ class ACPServer:
         save_config(config_for_save)
 
     async def authenticate(self, method_id: str, **kwargs: Any) -> acp.AuthenticateResponse | None:
-        raise NotImplementedError
+        logger.info("Received authenticate request with method_id: {method_id}", method_id=method_id)
+        
+        if method_id == "setup":
+            # Check if configuration exists and has a default model
+            try:
+                config = load_config()
+                if config.default_model and config.default_model in config.models:
+                    logger.info("Authentication successful: configuration found")
+                    return acp.AuthenticateResponse(success=True)
+                else:
+                    logger.warning("Authentication failed: no default model configured")
+                    return acp.AuthenticateResponse(
+                        success=False,
+                        error="No default model configured. Please run /setup to configure."
+                    )
+            except Exception as e:
+                logger.error("Authentication failed: {error}", error=str(e))
+                return acp.AuthenticateResponse(
+                    success=False,
+                    error=f"Configuration error: {str(e)}"
+                )
+        
+        logger.warning("Unknown authentication method: {method_id}", method_id=method_id)
+        return acp.AuthenticateResponse(
+            success=False,
+            error=f"Unknown authentication method: {method_id}"
+        )
 
     async def prompt(
         self, prompt: list[ACPContentBlock], session_id: str, **kwargs: Any
